@@ -267,6 +267,62 @@ std::tuple<float, float, float> Evaluate(const vector<Ellipse>& ellGT, const vec
 	return make_tuple(pr, re, fmeasure);
 }
 
+void create_skeleton(char *image_path) {
+	// Check if the file provided is a valid image
+	string filename(image_path);
+	string file_basename = basename(image_path);
+	string ext = file_basename.substr(file_basename.find_last_of(".") + 1);
+	if (!((ext == "jpeg") || (ext == "jpg"))) {
+		cout << "image must be .jpeg or .jpg" << endl;
+		return;
+	}
+
+	string filename_minus_ext = filename.substr(0, filename.find_last_of("."));
+	cout << "Creating skeleton for image \"" << image_path << "\"" << endl;
+	
+	// Read image
+	Mat3b image = imread(filename);
+
+	// Convert to grayscale
+	Mat1b gray;
+	cvtColor(image, gray, CV_BGR2GRAY);
+
+	cv::threshold(gray, gray, 127, 255, cv::THRESH_BINARY); 
+	cv::Mat skel(gray.size(), CV_8UC1, cv::Scalar(0));
+	cv::Mat temp;
+	cv::Mat eroded;
+	
+	cv::Mat element = cv::getStructuringElement(cv::MORPH_CROSS, cv::Size(3, 3));
+	
+	bool done;		
+	do
+	{
+		cv::erode(gray, eroded, element);
+		cv::dilate(eroded, temp, element); // temp = open(img)
+		cv::subtract(gray, temp, temp);
+		cv::bitwise_or(skel, temp, skel);
+		eroded.copyTo(gray);
+		
+		done = (cv::countNonZero(gray) == 0);
+	} while (!done);
+
+	// Mat cdst;
+	// cvtColor(skel, cdst, CV_GRAY2BGR);
+
+	vector<Vec4i> lines;
+	HoughLinesP(skel, lines, 1, CV_PI/180, 90, 200, 25 );
+	for( size_t i = 0; i < lines.size(); i++ )
+	{
+		Vec4i l = lines[i];
+		line( image, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(0,0,255), 3, CV_AA);
+	}
+	namedWindow("Skeleton", WINDOW_NORMAL);
+	cv::imshow("Skeleton", skel);
+	namedWindow("detected lines", WINDOW_NORMAL);
+	imshow("detected lines", image);
+	cv::waitKey(0);
+}
+
 void OnImage(char *image_path)
 {
 	// Check if the file provided is a valid image
@@ -283,6 +339,8 @@ void OnImage(char *image_path)
 	
 	// Read image
 	Mat3b image = imread(filename);
+	// resize(image, image, Size(), 0.8, 0.8, INTER_CUBIC);
+	
 	Size sz = image.size();
 
 	// Convert to grayscale
@@ -607,21 +665,50 @@ void OnDataset()
 	getchar();
 }
 
+enum Action {annotateImage, skeletonImage};
 
 int main(int argc, char** argv)
 {
-	if (argc != 2) {
-		cout << "Expected one argument" << endl;
+	Action action = annotateImage;
+	int pathindex = 0;
+	if (argc == 2) {
+		cout << "one argument" << endl;
+		pathindex = 1;
+	}
+	else if (argc == 3) {
+		cout << "two arguments" << endl;
+		pathindex = 2;
+		cout << argv[1] << endl;
+		if (strcmp(argv[1], "skeleton") == 0) {
+			action = skeletonImage;
+		}
+	}
+	else {
+		cout << "Expected one or two arguments" << endl;
 		return 1;
 	}
-	char *unresolved_path = argv[1];
+	
+	char *unresolved_path = argv[pathindex];
 	char *resolved_path = (char *)malloc(PATH_MAX);
 	realpath(unresolved_path, resolved_path);
 	// char *extension = (char *)malloc(20);
 	// _splitpath_s(resolved_path, NULL, 0, NULL, 0, NULL, 0, extension, 20);
 	// cout << "file extension: " << extension << endl;
 	// OnVideo();
-	OnImage(resolved_path);
+	cout << "action: " << action << endl;
+	cout << "annotateImage: " << annotateImage << ", skeletonImage: " << skeletonImage << endl;
+	switch(action) {
+		case annotateImage:
+			cout << "annotate image" << endl;
+			OnImage(resolved_path);
+			break;
+		case skeletonImage:
+			cout << "create skeleton" << endl;
+			create_skeleton(resolved_path);
+			break;
+		default:
+			break;
+	}
 	//OnDataset();
 	free(resolved_path);
 	// free(extension);
